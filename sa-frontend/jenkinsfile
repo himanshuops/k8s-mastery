@@ -1,0 +1,59 @@
+pipeline {
+  agent any
+  environment {
+    DOCKER_REPO = "<ECR_Repourl"
+    AWS_REGION = "<Region_Name>"
+    BRANCH_NAME = "<Branch>"
+  }
+stages {
+    stage('Clone sources') {
+        steps {
+        container('docker'){            
+            script{
+            sh '''
+            git clone -b $BRANCH_NAME https://github.com/Mohan091/k8s-mastery.git
+            
+            '''
+            }
+        }
+    }
+}
+    stage('build and push') {
+        steps {
+            container('docker'){
+                withCredentials([gitUsernamePassword(credentialsId: '<aws_creds>')]) {
+                script {
+                sh '''
+                cd k8s-mastery/sa-frontend
+                docker build -t frontend .
+                aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin 421320058418.dkr.ecr.us-east-1.amazonaws.com
+                docker tag frontend:latest ${DOCKER_REPO}/frontend:k8s-${BUILD_NUMBER}-${BRANCH_NAME}
+                docker push ${DOCKER_REPO}/frontend:k8s-${BUILD_NUMBER}-${BRANCH_NAME}
+                '''
+            } 
+        }
+    }
+}
+}
+    stage('update values,commit and push'){
+        steps {
+            container('docker'){
+                withCredentials([gitUsernamePassword(credentialsId: '<github_creds>')]) {
+                script {
+                    sh '''
+                    cd k8s-mastery/sa-frontend/frontend
+                    yq e -i '(.image.tag = "'k8s-${BUILD_NUMBER}-${BRANCH_NAME}'")' values.yaml
+                    git config --global user.email "mohan@squareops.com"
+                    git config --global user.name "Mohan Mourya"            
+                    git add .
+                    git commit -m 'image tag update in values.yaml'
+                    git push origin $BRANCH_NAME            
+                    
+                    '''
+            }  
+        } 
+    }
+}
+}
+}
+}
